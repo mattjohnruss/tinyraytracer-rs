@@ -1,6 +1,45 @@
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub, Neg};
 use num_traits::{Float, Zero};
 use crate::materials::Material;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Vec2<T> {
+    pub x: T,
+    pub y: T,
+}
+
+impl<T: Zero> Vec2<T> {
+    pub fn new(x: T, y: T) -> Self {
+        Vec2 { x, y }
+    }
+
+    pub fn zero() -> Self {
+        Vec2 {
+            x: Zero::zero(),
+            y: Zero::zero(),
+        }
+    }
+
+    //pub fn length(self) -> T
+    //where
+        //T: Float,
+    //{
+        //dot(&self, &self).sqrt()
+    //}
+
+    //pub fn normalise(self) -> Vec3<T>
+    //where
+        //T: Float,
+    //{
+        //self / self.length()
+    //}
+}
+
+impl<T: Zero> Default for Vec2<T> {
+    fn default() -> Self {
+        Vec2::zero()
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Vec3<T> {
@@ -26,7 +65,7 @@ impl<T: Zero> Vec3<T> {
     where
         T: Float,
     {
-        dot(&self, &self).sqrt()
+        dot(self, self).sqrt()
     }
 
     pub fn normalise(self) -> Vec3<T>
@@ -43,11 +82,15 @@ impl<T: Zero> Default for Vec3<T> {
     }
 }
 
-pub fn dot<T>(lhs: &Vec3<T>, rhs: &Vec3<T>) -> T
+pub fn dot<T>(lhs: Vec3<T>, rhs: Vec3<T>) -> T
 where
     T: Float,
 {
     lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z
+}
+
+pub fn reflect(incident: Vec3<f32>, normal: Vec3<f32>) -> Vec3<f32> {
+    incident - 2.0*dot(incident, normal)*normal
 }
 
 impl<T: Add<Output = T>> Add for Vec3<T> {
@@ -114,6 +157,20 @@ impl<T: Div<Output = T> + Copy> Div<T> for Vec3<T> {
     }
 }
 
+impl<T: Zero + Sub<Output = T>> Neg for Vec3<T> {
+//impl<T: Neg> Neg for Vec3<T> {
+    type Output = Vec3<T>;
+
+    fn neg(self) -> Vec3<T> {
+        //Vec3 {
+            //x: -(self.x),
+            //y: -(self.y),
+            //z: -(self.z),
+        //}
+        Vec3::zero() - self
+    }
+}
+
 #[derive(Debug)]
 pub struct Ray {
     pub origin: Vec3<f32>,
@@ -139,8 +196,8 @@ impl Sphere {
     // TODO understand this and make it more idiomatic in Rust
     pub fn ray_intersect(&self, ray: &Ray) -> Option<f32> {
         let l = self.centre - ray.origin;
-        let tca = dot(&l, &ray.direction);
-        let d2 = dot(&l, &l) - tca * tca;
+        let tca = dot(l, ray.direction);
+        let d2 = dot(l, l) - tca * tca;
 
         if d2 > self.radius * self.radius {
             return None;

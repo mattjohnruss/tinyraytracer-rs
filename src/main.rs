@@ -1,7 +1,7 @@
 mod geometry;
 mod materials;
 
-use geometry::{Ray, Sphere, Vec3, dot};
+use geometry::{Ray, Sphere, Vec2, Vec3, dot, reflect};
 use materials::Material;
 use std::fs::File;
 use std::io::BufWriter;
@@ -11,7 +11,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 const WIDTH: i32 = 1024;
 const HEIGHT: i32 = 768;
-const FOV: f32 = std::f32::consts::PI / 3.0;
+const FOV: f32 = (std::f32::consts::PI / 2.0) as u32 as f32;
 
 const BACKGROUND_COLOUR: Vec3<f32> = Vec3 {
     x: 0.2,
@@ -54,6 +54,12 @@ fn save_framebuffer(framebuffer: &FrameBuffer) -> Result<()> {
     write!(file, "P6\n{} {}\n255\n", WIDTH, HEIGHT)?;
 
     for v in framebuffer {
+        let mut v = *v;
+        let max = v.x.max(v.y.max(v.z));
+        if max > 1.0 {
+            v = v * (1.0/max);
+        }
+
         let pixel: [u8; 3] = [
             clamp_to_u8(v.x, 0.0, 1.0),
             clamp_to_u8(v.y, 0.0, 1.0),
@@ -95,13 +101,41 @@ fn scene_intersect(ray: &Ray, spheres: &[Sphere]) -> Option<(Vec3<f32>, Vec3<f32
 
 fn cast_ray(ray: &Ray, spheres: &[Sphere], lights: &[Light]) -> Vec3<f32> {
     if let Some((point, normal, material)) = scene_intersect(ray, spheres) {
-        let mut intensity = 0.0;
+        let mut diffuse_intensity = 0.0;
+        let mut specular_intensity = 0.0;
+
         for light in lights {
             let light_direction = (light.position - point).normalise();
-            intensity += light.intensity * 0.0f32.max(dot(&light_direction, &normal));
+            let light_distance = (light.position - point).length();
+
+            let shadow_origin = if dot(light_direction, normal) < 0.0 {
+                point - normal*1.0e-3
+            } else {
+                point + normal*1.0e-3
+            };
+
+            let shadow_ray = Ray {
+                origin: shadow_origin,
+                direction: light_direction,
+            };
+
+            if let Some((shadow_point, _, _)) = scene_intersect(&shadow_ray, spheres) {
+                if (shadow_point - shadow_origin).length() < light_distance {
+                    continue;
+                }
+            }
+
+            diffuse_intensity +=
+                light.intensity * 0.0f32.max(dot(light_direction, normal));
+
+            let reflection = reflect(-light_direction, normal);
+            specular_intensity +=
+                0.0f32.max(dot(-reflection, ray.direction))
+                .powf(material.specular_exponent) * light.intensity;
         }
 
-        material.diffuse_colour * intensity
+        material.diffuse_colour * diffuse_intensity * material.albedo.x
+            + Vec3::new(1.0, 1.0, 1.0) * specular_intensity * material.albedo.y
     } else {
         BACKGROUND_COLOUR
     }
@@ -134,8 +168,8 @@ fn render(spheres: &[Sphere], lights: &[Light]) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let ivory = Material::new(Vec3::new(0.4, 0.4, 0.3));
-    let red_rubber = Material::new(Vec3::new(0.3, 0.1, 0.1));
+    let ivory = Material::new(Vec2::new(0.6, 0.3), Vec3::new(0.4, 0.4, 0.3), 50.0);
+    let red_rubber = Material::new(Vec2::new(0.9, 0.1), Vec3::new(0.3, 0.1, 0.1), 10.0);
 
     let spheres = vec![
         Sphere::new(Vec3::new(-3.0, 0.0, -16.0), 2.0, ivory),
@@ -145,7 +179,9 @@ fn main() -> Result<()> {
     ];
 
     let lights = vec![
-        Light::new(Vec3::new(-20.0, 20.0, 20.0), 1.5),
+        Light::new(Vec3::new(-20.0, 20.0,  20.0), 1.5),
+        Light::new(Vec3::new( 30.0, 50.0, -25.0), 1.8),
+        Light::new(Vec3::new( 30.0, 20.0,  30.0), 1.7),
     ];
 
     render(&spheres, &lights)?;
